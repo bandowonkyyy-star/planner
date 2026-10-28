@@ -151,6 +151,8 @@ function parseQuick(text, defaults) {
   if (out.repeat && !out.due) {
     out.due = out.repeat.startsWith('weekly:') ? nextWeekday(Number(out.repeat.split(':')[1]), addDays(today(), -1)) : today();
   }
+  // Drop a dangling preposition left after a parsed date/time: "цветы в пт 9:00" -> "цветы"
+  while (keep.length > 1 && /^(в|во|на|к|ко|до|at|on|by)$/i.test(keep[keep.length - 1])) keep.pop();
   out.title = keep.join(' ');
   return out;
 }
@@ -401,9 +403,13 @@ function render() {
 
 // ---------- Sheets ----------
 function openSheet(html, onMount) {
-  $('#sheetBody').innerHTML = html;
+  // Fresh element each time: listeners from a previously opened sheet must not survive
+  const old = $('#sheetBody');
+  const el = old.cloneNode(false);
+  old.replaceWith(el);
+  el.innerHTML = html;
   $('#sheet').hidden = false;
-  if (onMount) onMount($('#sheetBody'));
+  if (onMount) onMount(el);
 }
 function closeSheet() { $('#sheet').hidden = true; $('#sheetBody').innerHTML = ''; }
 
