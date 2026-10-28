@@ -170,7 +170,7 @@ main { padding: 4px 16px calc(var(--safe-b) + 150px); }
 textarea.inp { min-height: 80px; resize: vertical; }
 select.inp { -webkit-appearance: none; appearance: none; }
 /* iOS date inputs ignore width unless appearance is reset */
-input[type="date"].inp { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; text-align: left; }
+input[type="date"].inp, input[type="time"].inp { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; text-align: left; }
 input[type="date"].inp::-webkit-date-and-time-value { text-align: left; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chips button, .chips span {
