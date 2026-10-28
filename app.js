@@ -105,7 +105,8 @@ function repeatLabel(r) {
 
 // ---------- Quick-add parser ----------
 function parseQuick(text, defaults) {
-  const out = Object.assign({ priority: 4, due: null, project: 'inbox', repeat: null }, defaults || {});
+  const out = Object.assign({ priority: 4, due: null, time: null, project: 'inbox', repeat: null }, defaults || {});
+  const timeRe = /^([01]?\d|2[0-3]):([0-5]\d)$/;
   const words = text.trim().split(/\s+/);
   const keep = [];
   for (let i = 0; i < words.length; i++) {
@@ -117,6 +118,8 @@ function parseQuick(text, defaults) {
     const nx = (words[i + 1] || '').toLowerCase();
     if ((m = lw.match(/^(?:!|p|р|п)([1-3])$/) || lw.match(/^([1-3])!$/))) { out.priority = Number(m[1]); continue; }
     if (lw === '!' && /^[1-3]$/.test(nx)) { out.priority = Number(nx); i += 1; continue; }
+    if ((m = lw.match(timeRe))) { out.time = `${pad(m[1])}:${m[2]}`; continue; }
+    if ((lw === 'в' || lw === 'at') && (m = nx.replace(/[.,]$/, '').match(timeRe))) { out.time = `${pad(m[1])}:${m[2]}`; i += 1; continue; }
     if ((m = lw.match(/^#(.+)$/)) && PROJECT_ALIAS[m[1]]) { out.project = PROJECT_ALIAS[m[1]]; continue; }
     if (lw === 'today' || lw === 'сегодня') { out.due = today(); continue; }
     if (lw === 'tomorrow' || lw === 'завтра') { out.due = addDays(today(), 1); continue; }
@@ -144,6 +147,7 @@ function parseQuick(text, defaults) {
     }
     keep.push(w);
   }
+  if (out.time && !out.due) out.due = today();
   if (out.repeat && !out.due) {
     out.due = out.repeat.startsWith('weekly:') ? nextWeekday(Number(out.repeat.split(':')[1]), addDays(today(), -1)) : today();
   }
@@ -157,7 +161,7 @@ function newTask(fields) {
   const now = Date.now();
   return Object.assign({
     id: uid(), title: '', notes: '', project: 'inbox', stage: null, priority: 4,
-    due: null, repeat: null, done: false, doneAt: null, subtasks: [],
+    due: null, time: null, repeat: null, done: false, doneAt: null, subtasks: [],
     created: now, modified: now, deleted: false
   }, fields);
 }
@@ -294,6 +298,8 @@ function scheduleSync(ms) {
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const byPrio = (a, b) => (a.priority - b.priority) || ((a.due || '9') < (b.due || '9') ? -1 : (a.due || '9') > (b.due || '9') ? 1 : 0) || (a.created - b.created);
+// Within one day: timed tasks first, in time order, then by priority
+const byDay = (a, b) => ((a.time || '99') < (b.time || '99') ? -1 : (a.time || '99') > (b.time || '99') ? 1 : 0) || byPrio(a, b);
 
 function rowHtml(t, opts) {
   const o = opts || {};
@@ -302,7 +308,9 @@ function rowHtml(t, opts) {
   if (t.priority < 4) meta.push(`<span class="prio p${t.priority}">P${t.priority}</span>`);
   if (t.due && !o.hideDate) {
     const cls = !t.done && t.due < t0 ? 'late' : t.due === t0 ? 'today' : '';
-    meta.push(`<span class="${cls}">${dateLabel(t.due)}</span>`);
+    meta.push(`<span class="${cls}">${dateLabel(t.due)}${t.time ? ', ' + t.time : ''}</span>`);
+  } else if (t.time) {
+    meta.push(`<span class="today">&#9719; ${t.time}</span>`);
   }
   if (t.repeat) meta.push(`<span>&#8635; ${repeatLabel(t.repeat)}</span>`);
   if (t.subtasks.length) meta.push(`<span>${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
@@ -323,7 +331,7 @@ function viewToday() {
   const t0 = today();
   const open = alive().filter(t => !t.done && t.due);
   const late = open.filter(t => t.due < t0).sort(byPrio);
-  const now = open.filter(t => t.due === t0).sort(byPrio);
+  const now = open.filter(t => t.due === t0).sort(byDay);
   const doneToday = alive().filter(t => t.done && t.doneAt && ymd(new Date(t.doneAt)) === t0);
   let h = '';
   if (late.length) h += `<div class="group-h red">Просрочено &middot; ${late.length}</div>` + list(late);
@@ -338,7 +346,7 @@ function viewUpcoming() {
   let h = '';
   for (let i = 1; i <= 14; i++) {
     const d = addDays(t0, i);
-    const items = open.filter(t => t.due === d).sort(byPrio);
+    const items = open.filter(t => t.due === d).sort(byDay);
     if (items.length) h += `<div class="group-h">${dateLabel(d)}${i < 7 ? '' : ''} &middot; ${parseYmd(d).getDate()} ${MONTHS[parseYmd(d).getMonth()]}</div>` + list(items, { hideDate: true });
   }
   const later = open.filter(t => t.due > addDays(t0, 14)).sort((a, b) => a.due < b.due ? -1 : 1);
@@ -373,7 +381,7 @@ function viewTiktok() {
     return `<section class="col"><div class="col-h">${STAGE_LABEL[s]} <span>${col.length}</span></div>
       ${col.map(t => `<div class="card" data-id="${t.id}">
         <div class="title" data-act="open">${esc(t.title)}</div>
-        <div class="meta">${t.due ? `<span class="${t.due < t0 && s !== 'published' ? 'late' : ''}">${dateLabel(t.due)}</span>` : ''}${t.priority < 4 ? `<span>P${t.priority}</span>` : ''}</div>
+        <div class="meta">${t.due ? `<span class="${t.due < t0 && s !== 'published' ? 'late' : ''}">${dateLabel(t.due)}${t.time ? ', ' + t.time : ''}</span>` : ''}${t.priority < 4 ? `<span>P${t.priority}</span>` : ''}</div>
         <div class="card-act">
           <button data-act="stage-prev" ${si === 0 ? 'disabled' : ''}>&#8592; ${si > 0 ? STAGE_LABEL[STAGES[si - 1]] : ''}</button>
           <button data-act="stage-next" ${si === STAGES.length - 1 ? 'disabled' : ''}>${si < STAGES.length - 1 ? STAGE_LABEL[STAGES[si + 1]] : ''} &#8594;</button>
@@ -409,13 +417,13 @@ function openQuickAdd() {
   openSheet(`<h2>Новая задача</h2>
     <input class="inp" id="qa" placeholder="Смонтировать ролик завтра !1 #тикток" autocomplete="off" enterkeyhint="done">
     <div class="chips" id="qaPreview"></div>
-    <div class="hint">Приоритет: !1 !2 !3 &middot; Раздел: #тикток #моушн #учеба #задачи &middot; Дата: сегодня, завтра, пт, 12.11, через 3 дня &middot; Повтор: каждый день, каждый пн, по будням</div>
+    <div class="hint">Приоритет: !1 !2 !3 &middot; Раздел: #тикток #моушн #учеба #задачи &middot; Дата: сегодня, завтра, пт, 12.11, через 3 дня &middot; Время: 17:30, в 9:00 &middot; Повтор: каждый день, каждый пн, по будням</div>
     <div class="btns"><button class="btn" data-act="close">Отмена</button><button class="btn main" id="qaAdd">Добавить</button></div>`, el => {
     const inp = el.querySelector('#qa');
     const preview = () => {
       const p = parseQuick(inp.value, quickDefaults());
       const chips = [`<span>${PROJECTS[p.project]}</span>`];
-      if (p.due) chips.push(`<span>${dateLabel(p.due)}</span>`);
+      if (p.due) chips.push(`<span>${dateLabel(p.due)}${p.time ? ', ' + p.time : ''}</span>`);
       if (p.priority < 4) chips.push(`<span>P${p.priority}</span>`);
       if (p.repeat) chips.push(`<span>&#8635; ${repeatLabel(p.repeat)}</span>`);
       el.querySelector('#qaPreview').innerHTML = chips.join('');
@@ -423,7 +431,7 @@ function openQuickAdd() {
     const add = () => {
       const p = parseQuick(inp.value, quickDefaults());
       if (!p.title) { inp.focus(); return; }
-      data.tasks.push(newTask({ title: p.title, project: p.project, priority: p.priority, due: p.due, repeat: p.repeat, stage: p.project === 'tiktok' ? 'idea' : null }));
+      data.tasks.push(newTask({ title: p.title, project: p.project, priority: p.priority, due: p.due, time: p.time, repeat: p.repeat, stage: p.project === 'tiktok' ? 'idea' : null }));
       commit();
       inp.value = ''; preview(); inp.focus();
       toast('Добавлено');
@@ -448,6 +456,8 @@ function openEditor(id) {
       <div class="field"><label>Приоритет</label><div class="chips">${[1, 2, 3, 4].map(p => `<button data-prio="${p}" class="${draft.priority === p ? 'on' : ''}">${p < 4 ? 'P' + p : 'Нет'}</button>`).join('')}</div></div>
       <div class="field"><label>Дата</label><input class="inp" type="date" id="eDue" value="${draft.due || ''}">
         <div class="chips"><button data-due="${t0}">Сегодня</button><button data-due="${addDays(t0, 1)}">Завтра</button><button data-due="${nextWeekday(1)}">След. пн</button><button data-due="">Без даты</button></div></div>
+      <div class="field"><label>Время</label><input class="inp" type="time" id="eTime" value="${draft.time || ''}">
+        ${draft.time ? '<div class="chips"><button data-notime="1">Без времени</button></div>' : ''}</div>
       <div class="field"><label>Повтор</label><select class="inp" id="eRepeat">${repeatOpts.map(([v, l]) => `<option value="${v}" ${((draft.repeat || '').split(':')[0]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label>Раздел</label><select class="inp" id="eProject">${Object.keys(PROJECTS).map(k => `<option value="${k}" ${draft.project === k ? 'selected' : ''}>${PROJECTS[k]}</option>`).join('')}</select></div>
       ${draft.project === 'tiktok' ? `<div class="field"><label>Этап</label><select class="inp" id="eStage">${STAGES.map(s => `<option value="${s}" ${(draft.stage || 'idea') === s ? 'selected' : ''}>${STAGE_LABEL[s]}</option>`).join('')}</select></div>` : ''}
@@ -460,6 +470,8 @@ function openEditor(id) {
   const readInputs = el => {
     draft.title = el.querySelector('#eTitle').value.trim() || draft.title;
     draft.due = el.querySelector('#eDue').value || null;
+    draft.time = el.querySelector('#eTime').value || null;
+    if (draft.time && !draft.due) draft.due = t0;
     const r = el.querySelector('#eRepeat').value;
     draft.repeat = r === 'weekly' ? 'weekly:' + parseYmd(draft.due || t0).getDay() : (r || null);
     if (draft.repeat && !draft.due) draft.due = t0;
@@ -474,7 +486,8 @@ function openEditor(id) {
       const b = e.target.closest('button');
       if (!b) return;
       if (b.dataset.prio) { readInputs(el); draft.priority = Number(b.dataset.prio); draw(el); }
-      else if (b.dataset.due !== undefined) { readInputs(el); draft.due = b.dataset.due || null; if (!draft.due) draft.repeat = null; draw(el); }
+      else if (b.dataset.due !== undefined) { readInputs(el); draft.due = b.dataset.due || null; if (!draft.due) { draft.repeat = null; draft.time = null; } draw(el); }
+      else if (b.dataset.notime) { readInputs(el); draft.time = null; draw(el); }
       else if (b.dataset.sub !== undefined) { readInputs(el); const s = draft.subtasks[Number(b.dataset.sub)]; s.done = !s.done; draw(el); }
       else if (b.dataset.subdel !== undefined) { readInputs(el); draft.subtasks.splice(Number(b.dataset.subdel), 1); draw(el); }
       else if (b.id === 'eSave') { readInputs(el); Object.assign(t, draft); touch(t); commit(); closeSheet(); }
