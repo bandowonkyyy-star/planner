@@ -1,11 +1,12 @@
 'use strict';
 
 // ---------- Constants ----------
-const PROJECTS = { inbox: 'Inbox', tasks: 'Tasks', tiktok: 'TikTok', motion: 'Motion', study: 'Study' };
+// UI language: Russian (user request, 2026-10-28)
+const PROJECTS = { inbox: 'Входящие', tasks: 'Задачи', tiktok: 'TikTok', motion: 'Моушн', study: 'Учёба' };
 const STAGES = ['idea', 'script', 'shoot', 'edit', 'published'];
-const STAGE_LABEL = { idea: 'Idea', script: 'Script', shoot: 'Shoot', edit: 'Edit', published: 'Published' };
-const REPEAT_LABEL = { daily: 'Every day', weekdays: 'Weekdays', weekly: 'Every week', monthly: 'Every month' };
-const VIEW_TITLE = { today: 'Today', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'Projects', tiktok: 'TikTok' };
+const STAGE_LABEL = { idea: 'Идея', script: 'Сценарий', shoot: 'Съёмка', edit: 'Монтаж', published: 'Опубликовано' };
+const REPEAT_LABEL = { daily: 'Каждый день', weekdays: 'По будням', weekly: 'Каждую неделю', monthly: 'Каждый месяц' };
+const VIEW_TITLE = { today: 'Сегодня', upcoming: 'Скоро', inbox: 'Входящие', projects: 'Проекты', tiktok: 'TikTok' };
 const LS = { data: 'planner.data', cfg: 'planner.cfg', dirty: 'planner.dirty', ui: 'planner.ui' };
 const TOMBSTONE_DAYS = 30;
 
@@ -24,8 +25,8 @@ const WEEKDAY = {
   'ср': 3, 'среда': 3, 'среду': 3, 'чт': 4, 'четверг': 4, 'пт': 5, 'пятница': 5, 'пятницу': 5,
   'сб': 6, 'суббота': 6, 'субботу': 6
 };
-const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WD_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 // ---------- Storage ----------
 function lsGet(key, fallback) {
@@ -54,9 +55,9 @@ function nextWeekday(wd, from) {
 }
 function dateLabel(s) {
   const t = today();
-  if (s === t) return 'Today';
-  if (s === addDays(t, 1)) return 'Tomorrow';
-  if (s === addDays(t, -1)) return 'Yesterday';
+  if (s === t) return 'Сегодня';
+  if (s === addDays(t, 1)) return 'Завтра';
+  if (s === addDays(t, -1)) return 'Вчера';
   const d = parseYmd(s);
   const diff = Math.round((d - parseYmd(t)) / 864e5);
   if (diff > 1 && diff < 7) return WD_SHORT[d.getDay()];
@@ -93,7 +94,7 @@ function nextDue(due, repeat) {
 }
 function repeatLabel(r) {
   if (!r) return '';
-  if (r.startsWith('weekly:')) return 'Every ' + WD_SHORT[Number(r.split(':')[1])];
+  if (r.startsWith('weekly:')) return 'Каждый ' + WD_SHORT[Number(r.split(':')[1])].toLowerCase();
   return REPEAT_LABEL[r] || r;
 }
 
@@ -170,19 +171,19 @@ function toggleDone(t) {
     t.due = nextDue(t.due, t.repeat);
     t.subtasks.forEach(s => { s.done = false; });
     touch(t); commit();
-    toast(`Next: ${dateLabel(t.due)}`, before);
+    toast(`Следующий раз: ${dateLabel(t.due)}`, before);
     return;
   }
   t.done = !t.done;
   t.doneAt = t.done ? Date.now() : null;
   if (t.done && t.project === 'tiktok' && t.stage !== 'published') t.stage = 'published';
   touch(t); commit();
-  if (t.done) toast('Completed', before);
+  if (t.done) toast('Выполнено', before);
 }
 function postpone(t) {
   const before = JSON.stringify(t);
   t.due = addDays(today(), 1); touch(t); commit();
-  toast('Moved to tomorrow', before);
+  toast('Перенесено на завтра', before);
 }
 
 // ---------- Sync (GitHub Contents API) ----------
@@ -234,11 +235,11 @@ async function api(method, body) {
 }
 
 async function sync() {
-  if (!configured()) { setStatus('', 'Local'); return; }
-  if (!navigator.onLine) { setStatus('err', 'Offline'); return; }
+  if (!configured()) { setStatus('', 'Локально'); return; }
+  if (!navigator.onLine) { setStatus('err', 'Нет сети'); return; }
   if (syncing) { syncAgain = true; return; }
   syncing = true;
-  setStatus('busy', 'Syncing');
+  setStatus('busy', 'Синхр…');
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await api('GET');
@@ -248,7 +249,7 @@ async function sync() {
         sha = j.sha;
         remote = JSON.parse(b64d(j.content));
       } else if (res.status !== 404) {
-        throw new Error(res.status === 401 ? 'Bad token' : 'GitHub ' + res.status);
+        throw new Error(res.status === 401 ? 'Неверный токен' : res.status === 404 ? 'Нет репо' : 'GitHub ' + res.status);
       }
       const merged = { version: 1, updated: new Date().toISOString(), tasks: mergeTasks(data.tasks, remote.tasks || []) };
       const same = JSON.stringify(merged.tasks) === JSON.stringify(remote.tasks || []);
@@ -270,7 +271,7 @@ async function sync() {
       break;
     }
   } catch (e) {
-    setStatus('err', e.message && e.message.length < 18 ? e.message : 'Sync error');
+    setStatus('err', e.message && e.message.length < 18 ? e.message : 'Ошибка синхр.');
   } finally {
     syncing = false;
     if (syncAgain) { syncAgain = false; scheduleSync(300); }
@@ -300,9 +301,9 @@ function rowHtml(t, opts) {
   if (!o.hideProject && t.project !== 'inbox') meta.push(`<span class="chip">${PROJECTS[t.project]}</span>`);
   if (t.notes) meta.push('<span>&#9998;</span>');
   return `<div class="row${t.done ? ' done' : ''}" data-id="${t.id}">
-    <div class="row-bg"><span class="l">&#10003; Done</span><span class="r">Tomorrow &#8594;</span></div>
+    <div class="row-bg"><span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span></div>
     <div class="row-in">
-      <button class="check p${t.priority}${t.done ? ' on' : ''}" data-act="check" aria-label="Complete"></button>
+      <button class="check p${t.priority}${t.done ? ' on' : ''}" data-act="check" aria-label="Выполнить"></button>
       <div class="body" data-act="open"><div class="title">${esc(t.title)}</div>${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}</div>
     </div></div>`;
 }
@@ -316,10 +317,10 @@ function viewToday() {
   const now = open.filter(t => t.due === t0).sort(byPrio);
   const doneToday = alive().filter(t => t.done && t.doneAt && ymd(new Date(t.doneAt)) === t0);
   let h = '';
-  if (late.length) h += `<div class="group-h red">Overdue &middot; ${late.length}</div>` + list(late);
+  if (late.length) h += `<div class="group-h red">Просрочено &middot; ${late.length}</div>` + list(late);
   h += `<div class="group-h">${dateLabel(t0)} &middot; ${WD_SHORT[new Date().getDay()]} ${new Date().getDate()} ${MONTHS[new Date().getMonth()]}</div>`;
-  h += now.length ? list(now, { hideDate: true }) : empty('Nothing planned for today.<br>Tap + to add a task.');
-  if (doneToday.length) h += `<div class="group-h">Done today &middot; ${doneToday.length}</div>` + list(doneToday, { hideDate: true });
+  h += now.length ? list(now, { hideDate: true }) : empty('На сегодня ничего нет.<br>Нажми +, чтобы добавить задачу.');
+  if (doneToday.length) h += `<div class="group-h">Сделано сегодня &middot; ${doneToday.length}</div>` + list(doneToday, { hideDate: true });
   return h;
 }
 function viewUpcoming() {
@@ -332,23 +333,23 @@ function viewUpcoming() {
     if (items.length) h += `<div class="group-h">${dateLabel(d)}${i < 7 ? '' : ''} &middot; ${parseYmd(d).getDate()} ${MONTHS[parseYmd(d).getMonth()]}</div>` + list(items, { hideDate: true });
   }
   const later = open.filter(t => t.due > addDays(t0, 14)).sort((a, b) => a.due < b.due ? -1 : 1);
-  if (later.length) h += '<div class="group-h">Later</div>' + list(later);
-  return h || empty('No upcoming tasks for the next two weeks.');
+  if (later.length) h += '<div class="group-h">Позже</div>' + list(later);
+  return h || empty('На ближайшие две недели задач нет.');
 }
 function viewInbox() {
   const items = alive().filter(t => t.project === 'inbox' && !t.done).sort(byPrio);
-  return items.length ? '<div class="hint" style="margin:6px 4px">Tap a task to set its project, date and priority.</div>' + list(items, { hideProject: true })
-    : empty('Inbox is empty.<br>Everything is sorted.');
+  return items.length ? '<div class="hint" style="margin:6px 4px">Нажми на задачу, чтобы выбрать проект, дату и приоритет.</div>' + list(items, { hideProject: true })
+    : empty('Во входящих пусто.<br>Всё разобрано.');
 }
 function viewProjects() {
   const keys = ['tasks', 'motion', 'study'];
   let h = `<div class="seg">${keys.map(k => `<button data-proj="${k}" class="${ui.project === k ? 'on' : ''}">${PROJECTS[k]}</button>`).join('')}</div>`;
   const all = alive().filter(t => t.project === ui.project);
   const open = all.filter(t => !t.done).sort((a, b) => ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0) || byPrio(a, b));
-  h += open.length ? list(open, { hideProject: true }) : empty(`No open tasks in ${PROJECTS[ui.project]}.`);
+  h += open.length ? list(open, { hideProject: true }) : empty(`В разделе «${PROJECTS[ui.project]}» открытых задач нет.`);
   const done = all.filter(t => t.done).sort((a, b) => b.doneAt - a.doneAt);
   if (done.length) {
-    h += `<button class="toggle-done" data-act="toggle-done">${ui.showDone ? 'Hide' : 'Show'} completed (${done.length})</button>`;
+    h += `<button class="toggle-done" data-act="toggle-done">${ui.showDone ? 'Скрыть' : 'Показать'} выполненные (${done.length})</button>`;
     if (ui.showDone) h += list(done.slice(0, 50), { hideProject: true });
   }
   return h;
@@ -367,7 +368,7 @@ function viewTiktok() {
         <div class="card-act">
           <button data-act="stage-prev" ${si === 0 ? 'disabled' : ''}>&#8592; ${si > 0 ? STAGE_LABEL[STAGES[si - 1]] : ''}</button>
           <button data-act="stage-next" ${si === STAGES.length - 1 ? 'disabled' : ''}>${si < STAGES.length - 1 ? STAGE_LABEL[STAGES[si + 1]] : ''} &#8594;</button>
-        </div></div>`).join('') || '<div class="hint" style="padding:4px">Empty</div>'}
+        </div></div>`).join('') || '<div class="hint" style="padding:4px">Пусто</div>'}
     </section>`;
   }).join('')}</div>`;
 }
@@ -378,7 +379,7 @@ function render() {
   $('#view').innerHTML = fn();
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === ui.view));
   const inboxCount = alive().filter(t => t.project === 'inbox' && !t.done).length;
-  document.querySelector('.tabs [data-view="inbox"]').lastChild.textContent = inboxCount ? `Inbox ${inboxCount}` : 'Inbox';
+  document.querySelector('.tabs [data-view="inbox"]').lastChild.textContent = inboxCount ? `Входящие ${inboxCount}` : 'Входящие';
 }
 
 // ---------- Sheets ----------
@@ -396,11 +397,11 @@ function quickDefaults() {
   return {};
 }
 function openQuickAdd() {
-  openSheet(`<h2>New task</h2>
-    <input class="inp" id="qa" placeholder="Edit video tomorrow !1 #tiktok" autocomplete="off" enterkeyhint="done">
+  openSheet(`<h2>Новая задача</h2>
+    <input class="inp" id="qa" placeholder="Смонтировать ролик завтра !1 #тикток" autocomplete="off" enterkeyhint="done">
     <div class="chips" id="qaPreview"></div>
-    <div class="hint">Tags: !1 !2 !3 priority &middot; #tiktok #motion #study #tasks &middot; today, tomorrow, mon, 12.11, in 3 days, every mon (Russian works too: завтра, пт, каждый день)</div>
-    <div class="btns"><button class="btn" data-act="close">Cancel</button><button class="btn main" id="qaAdd">Add</button></div>`, el => {
+    <div class="hint">Приоритет: !1 !2 !3 &middot; Раздел: #тикток #моушн #учеба #задачи &middot; Дата: сегодня, завтра, пт, 12.11, через 3 дня &middot; Повтор: каждый день, каждый пн, по будням</div>
+    <div class="btns"><button class="btn" data-act="close">Отмена</button><button class="btn main" id="qaAdd">Добавить</button></div>`, el => {
     const inp = el.querySelector('#qa');
     const preview = () => {
       const p = parseQuick(inp.value, quickDefaults());
@@ -416,7 +417,7 @@ function openQuickAdd() {
       data.tasks.push(newTask({ title: p.title, project: p.project, priority: p.priority, due: p.due, repeat: p.repeat, stage: p.project === 'tiktok' ? 'idea' : null }));
       commit();
       inp.value = ''; preview(); inp.focus();
-      toast('Added');
+      toast('Добавлено');
     };
     inp.addEventListener('input', preview);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
@@ -431,21 +432,21 @@ function openEditor(id) {
   if (!t) return;
   const draft = JSON.parse(JSON.stringify(t));
   const t0 = today();
-  const repeatOpts = [['', 'No repeat'], ['daily', 'Every day'], ['weekdays', 'Weekdays'], ['weekly', 'Every week (same weekday)'], ['monthly', 'Every month']];
+  const repeatOpts = [['', 'Без повтора'], ['daily', 'Каждый день'], ['weekdays', 'По будням'], ['weekly', 'Каждую неделю (в тот же день)'], ['monthly', 'Каждый месяц']];
   const draw = el => {
-    el.innerHTML = `<h2>Edit task</h2>
+    el.innerHTML = `<h2>Задача</h2>
       <div class="field"><input class="inp" id="eTitle" value="${esc(draft.title)}"></div>
-      <div class="field"><label>Priority</label><div class="chips">${[1, 2, 3, 4].map(p => `<button data-prio="${p}" class="${draft.priority === p ? 'on' : ''}">${p < 4 ? 'P' + p : 'None'}</button>`).join('')}</div></div>
-      <div class="field"><label>Date</label><input class="inp" type="date" id="eDue" value="${draft.due || ''}">
-        <div class="chips"><button data-due="${t0}">Today</button><button data-due="${addDays(t0, 1)}">Tomorrow</button><button data-due="${nextWeekday(1)}">Next Mon</button><button data-due="">No date</button></div></div>
-      <div class="field"><label>Repeat</label><select class="inp" id="eRepeat">${repeatOpts.map(([v, l]) => `<option value="${v}" ${((draft.repeat || '').split(':')[0]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="field"><label>Project</label><select class="inp" id="eProject">${Object.keys(PROJECTS).map(k => `<option value="${k}" ${draft.project === k ? 'selected' : ''}>${PROJECTS[k]}</option>`).join('')}</select></div>
-      ${draft.project === 'tiktok' ? `<div class="field"><label>Stage</label><select class="inp" id="eStage">${STAGES.map(s => `<option value="${s}" ${(draft.stage || 'idea') === s ? 'selected' : ''}>${STAGE_LABEL[s]}</option>`).join('')}</select></div>` : ''}
-      <div class="field"><label>Subtasks</label>
-        ${draft.subtasks.map((s, i) => `<div class="sub"><button class="check${s.done ? ' on' : ''}" data-sub="${i}"></button><span class="t">${esc(s.title)}</span><button class="x" data-subdel="${i}" aria-label="Remove">&#10005;</button></div>`).join('')}
-        <input class="inp" id="eSub" placeholder="Add subtask" enterkeyhint="done"></div>
-      <div class="field"><label>Notes</label><textarea class="inp" id="eNotes">${esc(draft.notes)}</textarea></div>
-      <div class="btns"><button class="btn danger" id="eDel">Delete</button><button class="btn" data-act="close">Cancel</button><button class="btn main" id="eSave">Save</button></div>`;
+      <div class="field"><label>Приоритет</label><div class="chips">${[1, 2, 3, 4].map(p => `<button data-prio="${p}" class="${draft.priority === p ? 'on' : ''}">${p < 4 ? 'P' + p : 'Нет'}</button>`).join('')}</div></div>
+      <div class="field"><label>Дата</label><input class="inp" type="date" id="eDue" value="${draft.due || ''}">
+        <div class="chips"><button data-due="${t0}">Сегодня</button><button data-due="${addDays(t0, 1)}">Завтра</button><button data-due="${nextWeekday(1)}">След. пн</button><button data-due="">Без даты</button></div></div>
+      <div class="field"><label>Повтор</label><select class="inp" id="eRepeat">${repeatOpts.map(([v, l]) => `<option value="${v}" ${((draft.repeat || '').split(':')[0]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>Раздел</label><select class="inp" id="eProject">${Object.keys(PROJECTS).map(k => `<option value="${k}" ${draft.project === k ? 'selected' : ''}>${PROJECTS[k]}</option>`).join('')}</select></div>
+      ${draft.project === 'tiktok' ? `<div class="field"><label>Этап</label><select class="inp" id="eStage">${STAGES.map(s => `<option value="${s}" ${(draft.stage || 'idea') === s ? 'selected' : ''}>${STAGE_LABEL[s]}</option>`).join('')}</select></div>` : ''}
+      <div class="field"><label>Подзадачи</label>
+        ${draft.subtasks.map((s, i) => `<div class="sub"><button class="check${s.done ? ' on' : ''}" data-sub="${i}"></button><span class="t">${esc(s.title)}</span><button class="x" data-subdel="${i}" aria-label="Убрать">&#10005;</button></div>`).join('')}
+        <input class="inp" id="eSub" placeholder="Добавить подзадачу" enterkeyhint="done"></div>
+      <div class="field"><label>Заметки</label><textarea class="inp" id="eNotes">${esc(draft.notes)}</textarea></div>
+      <div class="btns"><button class="btn danger" id="eDel">Удалить</button><button class="btn" data-act="close">Отмена</button><button class="btn main" id="eSave">Сохранить</button></div>`;
   };
   const readInputs = el => {
     draft.title = el.querySelector('#eTitle').value.trim() || draft.title;
@@ -468,7 +469,7 @@ function openEditor(id) {
       else if (b.dataset.sub !== undefined) { readInputs(el); const s = draft.subtasks[Number(b.dataset.sub)]; s.done = !s.done; draw(el); }
       else if (b.dataset.subdel !== undefined) { readInputs(el); draft.subtasks.splice(Number(b.dataset.subdel), 1); draw(el); }
       else if (b.id === 'eSave') { readInputs(el); Object.assign(t, draft); touch(t); commit(); closeSheet(); }
-      else if (b.id === 'eDel') { const before = JSON.stringify(t); t.deleted = true; touch(t); commit(); closeSheet(); toast('Deleted', before); }
+      else if (b.id === 'eDel') { const before = JSON.stringify(t); t.deleted = true; touch(t); commit(); closeSheet(); toast('Удалено', before); }
     });
     el.addEventListener('change', e => { if (e.target.id === 'eProject') { readInputs(el); draw(el); } });
     el.addEventListener('keydown', e => {
@@ -482,14 +483,14 @@ function openEditor(id) {
 }
 
 function openSettings() {
-  openSheet(`<h2>Sync settings</h2>
-    <div class="hint">Tasks sync with tasks.json in your private GitHub repo. The token stays on this device only.</div>
-    <div class="field"><label>GitHub username</label><input class="inp" id="sOwner" value="${esc(cfg.owner)}" autocapitalize="off" autocorrect="off"></div>
-    <div class="field"><label>Data repo</label><input class="inp" id="sRepo" value="${esc(cfg.repo)}" autocapitalize="off" autocorrect="off"></div>
-    <div class="field"><label>File path</label><input class="inp" id="sPath" value="${esc(cfg.path)}" autocapitalize="off" autocorrect="off"></div>
-    <div class="field"><label>Access token</label><input class="inp" id="sToken" type="password" value="${esc(cfg.token)}" placeholder="github_pat_..." autocomplete="off"></div>
-    <div class="btns"><button class="btn" data-act="close">Cancel</button><button class="btn main" id="sSave">Save &amp; sync</button></div>
-    <div class="hint" style="margin-top:16px">${alive().length} tasks stored on this device.</div>`, el => {
+  openSheet(`<h2>Синхронизация</h2>
+    <div class="hint">Задачи синхронизируются с файлом tasks.json в твоём приватном репозитории GitHub. Токен хранится только на этом устройстве.</div>
+    <div class="field"><label>Ник на GitHub</label><input class="inp" id="sOwner" value="${esc(cfg.owner)}" autocapitalize="off" autocorrect="off"></div>
+    <div class="field"><label>Репозиторий с данными</label><input class="inp" id="sRepo" value="${esc(cfg.repo)}" autocapitalize="off" autocorrect="off"></div>
+    <div class="field"><label>Файл</label><input class="inp" id="sPath" value="${esc(cfg.path)}" autocapitalize="off" autocorrect="off"></div>
+    <div class="field"><label>Токен доступа</label><input class="inp" id="sToken" type="password" value="${esc(cfg.token)}" placeholder="github_pat_..." autocomplete="off"></div>
+    <div class="btns"><button class="btn" data-act="close">Отмена</button><button class="btn main" id="sSave">Сохранить</button></div>
+    <div class="hint" style="margin-top:16px">Задач на устройстве: ${alive().length}</div>`, el => {
     el.querySelector('#sSave').addEventListener('click', () => {
       cfg = {
         owner: el.querySelector('#sOwner').value.trim(),
@@ -508,7 +509,7 @@ function openSettings() {
 let toastTimer = null;
 function toast(msg, beforeJson) {
   const el = $('#toast');
-  el.innerHTML = `<span>${esc(msg)}</span>${beforeJson ? '<button id="undo">Undo</button>' : ''}`;
+  el.innerHTML = `<span>${esc(msg)}</span>${beforeJson ? '<button id="undo">Вернуть</button>' : ''}`;
   el.hidden = false;
   if (beforeJson) {
     el.querySelector('#undo').addEventListener('click', () => {
