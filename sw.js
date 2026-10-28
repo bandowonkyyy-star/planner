@@ -1,5 +1,5 @@
 // App-shell cache: serve instantly, refresh in background. Bump VERSION on each deploy.
-const VERSION = 'planner-v1';
+const VERSION = 'planner-v2';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
