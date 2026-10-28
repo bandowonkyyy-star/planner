@@ -97,6 +97,13 @@ main { padding: 4px 16px calc(var(--safe-b) + 150px); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font-size: 13px; color: var(--muted); }
 .meta .late { color: var(--warn); }
 .meta .today { color: var(--ok); font-weight: 600; }
+.prio { padding: 0 7px; border-radius: 8px; font-weight: 700; color: #fff; }
+.prio.p1 { background: var(--p1); }
+.prio.p2 { background: var(--p2); }
+.prio.p3 { background: #9aa7d4; }
+.row-in.pr1 { box-shadow: inset 4px 0 0 var(--p1); }
+.row-in.pr2 { box-shadow: inset 4px 0 0 var(--p2); }
+.row-in.pr3 { box-shadow: inset 4px 0 0 #9aa7d4; }
 .chip { padding: 0 7px; border-radius: 8px; background: var(--sky-soft); color: #4d6299; }
 
 /* Segmented control */
