@@ -28,6 +28,11 @@ const WEEKDAY = {
 const WD_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
+// iOS Safari's floating toolbar covers the bottom of the page; the home-screen app has none
+if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !(navigator.standalone || matchMedia('(display-mode: standalone)').matches)) {
+  document.documentElement.classList.add('ios-browser');
+}
+
 // ---------- Storage ----------
 function lsGet(key, fallback) {
   try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; }
