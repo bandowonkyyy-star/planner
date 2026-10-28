@@ -589,7 +589,10 @@ window.addEventListener('online', () => sync());
 setInterval(() => { if (!document.hidden) sync(); }, 60000);
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  // A new version took over: reload once to show it
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });
 }
 
 render();
