@@ -104,11 +104,14 @@ function parseQuick(text, defaults) {
   const words = text.trim().split(/\s+/);
   const keep = [];
   for (let i = 0; i < words.length; i++) {
-    const w = words[i];
+    let w = words[i];
+    let m;
+    // Priority glued to a word: "деньги!1"
+    if ((m = w.match(/^(.+?)!([1-3])$/))) { out.priority = Number(m[2]); w = m[1]; }
     const lw = w.toLowerCase().replace(/[.,]$/, '');
     const nx = (words[i + 1] || '').toLowerCase();
-    let m;
-    if ((m = lw.match(/^!([1-3])$/))) { out.priority = Number(m[1]); continue; }
+    if ((m = lw.match(/^(?:!|p|р|п)([1-3])$/) || lw.match(/^([1-3])!$/))) { out.priority = Number(m[1]); continue; }
+    if (lw === '!' && /^[1-3]$/.test(nx)) { out.priority = Number(nx); i += 1; continue; }
     if ((m = lw.match(/^#(.+)$/)) && PROJECT_ALIAS[m[1]]) { out.project = PROJECT_ALIAS[m[1]]; continue; }
     if (lw === 'today' || lw === 'сегодня') { out.due = today(); continue; }
     if (lw === 'tomorrow' || lw === 'завтра') { out.due = addDays(today(), 1); continue; }
@@ -291,6 +294,7 @@ function rowHtml(t, opts) {
   const o = opts || {};
   const t0 = today();
   const meta = [];
+  if (t.priority < 4) meta.push(`<span class="prio p${t.priority}">P${t.priority}</span>`);
   if (t.due && !o.hideDate) {
     const cls = !t.done && t.due < t0 ? 'late' : t.due === t0 ? 'today' : '';
     meta.push(`<span class="${cls}">${dateLabel(t.due)}</span>`);
@@ -302,7 +306,7 @@ function rowHtml(t, opts) {
   if (t.notes) meta.push('<span>&#9998;</span>');
   return `<div class="row${t.done ? ' done' : ''}" data-id="${t.id}">
     <div class="row-bg"><span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span></div>
-    <div class="row-in">
+    <div class="row-in${t.priority < 4 && !t.done ? ' pr' + t.priority : ''}">
       <button class="check p${t.priority}${t.done ? ' on' : ''}" data-act="check" aria-label="Выполнить"></button>
       <div class="body" data-act="open"><div class="title">${esc(t.title)}</div>${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}</div>
     </div></div>`;
