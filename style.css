@@ -22,6 +22,9 @@
   --safe-t: env(safe-area-inset-top, 0px);
 }
 
+/* Lift everything above Safari's floating address bar */
+.ios-browser { --safe-b: calc(env(safe-area-inset-bottom, 0px) + 72px); }
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
@@ -146,11 +149,12 @@ main { padding: 4px 16px calc(var(--safe-b) + 150px); }
 .fab:active { transform: scale(.94); }
 
 /* Sheets */
-.sheet-wrap { position: fixed; inset: 0; z-index: 20; }
+.sheet-wrap { position: fixed; left: 0; right: 0; top: 0; bottom: 0; height: 100dvh; z-index: 20; }
 .sheet-bg { position: absolute; inset: 0; background: rgba(22, 38, 26, .35); }
 .sheet {
-  position: absolute; left: 0; right: 0; bottom: 0; max-height: 92vh; overflow-y: auto;
-  padding: 18px 16px calc(var(--safe-b) + 18px);
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 92vh; max-height: 92dvh; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  padding: 18px 16px calc(var(--safe-b) + 28px);
   border-radius: 20px 20px 0 0; background: var(--card);
   animation: up .22s ease;
 }
@@ -165,6 +169,9 @@ main { padding: 4px 16px calc(var(--safe-b) + 150px); }
 .inp:focus { border-color: var(--accent); }
 textarea.inp { min-height: 80px; resize: vertical; }
 select.inp { -webkit-appearance: none; appearance: none; }
+/* iOS date inputs ignore width unless appearance is reset */
+input[type="date"].inp { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; text-align: left; }
+input[type="date"].inp::-webkit-date-and-time-value { text-align: left; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chips button, .chips span {
   min-height: 34px; padding: 6px 12px; border-radius: 17px; background: var(--card2); font-size: 14px;
