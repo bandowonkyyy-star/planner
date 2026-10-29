@@ -169,9 +169,12 @@ function newTask(fields) {
 }
 const alive = () => data.tasks.filter(t => !t.deleted);
 const byId = id => data.tasks.find(t => t.id === id);
-function touch(t) { t.modified = Date.now(); }
+// Always newer than the version this device saw, even if another device's clock runs ahead
+function touch(t) { t.modified = Math.max(Date.now(), (t.modified || 0) + 1); }
 
+let changeSeq = 0;
 function commit() {
+  changeSeq++;
   data.updated = new Date().toISOString();
   lsSet(LS.data, data);
   dirty = true; lsSet(LS.dirty, true);
@@ -202,7 +205,7 @@ function postpone(t) {
 
 // ---------- Sync (GitHub Contents API) ----------
 const configured = () => cfg.owner && cfg.repo && cfg.token;
-let syncTimer = null, syncing = false, syncAgain = false;
+let syncTimer = null, retryTimer = null, syncing = false, syncAgain = false;
 
 function b64e(str) {
   const bytes = new TextEncoder().encode(str);
@@ -252,8 +255,10 @@ async function sync() {
   if (!configured()) { setStatus('', 'Локально'); return; }
   if (!navigator.onLine) { setStatus('err', 'Нет сети'); return; }
   if (syncing) { syncAgain = true; return; }
+  clearTimeout(retryTimer);
   syncing = true;
   setStatus('busy', 'Синхр…');
+  const seqAtStart = changeSeq;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await api('GET');
@@ -265,7 +270,8 @@ async function sync() {
       } else if (res.status !== 404) {
         throw new Error(res.status === 401 ? 'Неверный токен' : res.status === 404 ? 'Нет репо' : 'GitHub ' + res.status);
       }
-      const merged = { version: 1, updated: new Date().toISOString(), tasks: mergeTasks(data.tasks, remote.tasks || []) };
+      // Deep copy of local state: taps during the network calls must not leak into this snapshot
+      const merged = { version: 1, updated: new Date().toISOString(), tasks: mergeTasks(JSON.parse(JSON.stringify(data.tasks)), remote.tasks || []) };
       const same = JSON.stringify(merged.tasks) === JSON.stringify(remote.tasks || []);
       if (!same) {
         const put = await api('PUT', {
@@ -276,16 +282,20 @@ async function sync() {
         if (put.status === 409 || put.status === 422) continue;
         if (!put.ok) throw new Error('GitHub ' + put.status);
       }
-      data = merged;
+      // Keep anything changed on this device while we were talking to GitHub
+      data = { ...merged, tasks: mergeTasks(data.tasks, merged.tasks) };
       lsSet(LS.data, data);
-      dirty = false; lsSet(LS.dirty, false);
+      if (changeSeq === seqAtStart) { dirty = false; lsSet(LS.dirty, false); } else { syncAgain = true; }
       const hh = new Date();
       setStatus('ok', `${pad(hh.getHours())}:${pad(hh.getMinutes())}`);
       render();
       break;
     }
   } catch (e) {
-    setStatus('err', e.message && e.message.length < 18 ? e.message : 'Ошибка синхр.');
+    // fetch() network failures are TypeErrors ("Load failed" on iOS)
+    const offline = e instanceof TypeError;
+    setStatus('err', offline ? 'Нет сети' : e.message && e.message.length < 18 ? e.message : 'Ошибка синхр.');
+    retryTimer = setTimeout(sync, offline ? 5000 : 30000);
   } finally {
     syncing = false;
     if (syncAgain) { syncAgain = false; scheduleSync(300); }
@@ -496,8 +506,9 @@ function openEditor(id) {
       else if (b.dataset.notime) { readInputs(el); draft.time = null; draw(el); }
       else if (b.dataset.sub !== undefined) { readInputs(el); const s = draft.subtasks[Number(b.dataset.sub)]; s.done = !s.done; draw(el); }
       else if (b.dataset.subdel !== undefined) { readInputs(el); draft.subtasks.splice(Number(b.dataset.subdel), 1); draw(el); }
-      else if (b.id === 'eSave') { readInputs(el); Object.assign(t, draft); touch(t); commit(); closeSheet(); }
-      else if (b.id === 'eDel') { const before = JSON.stringify(t); t.deleted = true; touch(t); commit(); closeSheet(); toast('Удалено', before); }
+      // Look the task up again: a sync while the sheet was open may have replaced the object
+      else if (b.id === 'eSave') { readInputs(el); const cur = byId(id) || t; const keepMod = cur.modified; Object.assign(cur, draft); cur.modified = keepMod; touch(cur); commit(); closeSheet(); }
+      else if (b.id === 'eDel') { const cur = byId(id) || t; const before = JSON.stringify(cur); cur.deleted = true; touch(cur); commit(); closeSheet(); toast('Удалено', before); }
     });
     el.addEventListener('change', e => { if (e.target.id === 'eProject') { readInputs(el); draw(el); } });
     el.addEventListener('keydown', e => {
