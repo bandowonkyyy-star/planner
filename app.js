@@ -185,6 +185,9 @@ function commit() {
 function toggleDone(t) {
   const before = JSON.stringify(t);
   if (!t.done && t.repeat) {
+    // Remember today's completion so the task still shows under "Сделано сегодня"
+    t.prevDue = t.due;
+    t.lastDoneAt = Date.now();
     t.due = nextDue(t.due, t.repeat);
     t.subtasks.forEach(s => { s.done = false; });
     touch(t); commit();
@@ -196,6 +199,12 @@ function toggleDone(t) {
   if (t.done && t.project === 'tiktok' && t.stage !== 'published') t.stage = 'published';
   touch(t); commit();
   if (t.done) toast('Выполнено', before);
+}
+const repeatDoneToday = t => t.repeat && !t.done && t.lastDoneAt && ymd(new Date(t.lastDoneAt)) === today();
+function undoRepeat(t) {
+  t.due = t.prevDue && t.prevDue <= today() ? t.prevDue : today();
+  t.lastDoneAt = null;
+  touch(t); commit();
 }
 function removeTask(t) {
   const before = JSON.stringify(t);
@@ -322,22 +331,26 @@ function rowHtml(t, opts) {
   const o = opts || {};
   const t0 = today();
   const meta = [];
+  const shownDone = t.done || o.asDone;
   if (t.priority < 4) meta.push(`<span class="prio p${t.priority}">P${t.priority}</span>`);
-  if (t.due && !o.hideDate) {
+  if (o.asDone) {
+    meta.push(`<span>&#8635; дальше: ${dateLabel(t.due)}</span>`);
+  } else if (t.due && !o.hideDate) {
     const cls = !t.done && t.due < t0 ? 'late' : t.due === t0 ? 'today' : '';
     meta.push(`<span class="${cls}">${dateLabel(t.due)}${t.time ? ', ' + t.time : ''}</span>`);
   } else if (t.time) {
     meta.push(`<span class="today">&#9719; ${t.time}</span>`);
   }
-  if (t.repeat) meta.push(`<span>&#8635; ${repeatLabel(t.repeat)}</span>`);
+  if (t.repeat && !o.asDone) meta.push(`<span>&#8635; ${repeatLabel(t.repeat)}</span>`);
   if (t.subtasks.length) meta.push(`<span>${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
   if (t.project === 'tiktok' && t.stage) meta.push(`<span>${STAGE_LABEL[t.stage]}</span>`);
   if (!o.hideProject && t.project !== 'inbox') meta.push(`<span class="chip">${PROJECTS[t.project]}</span>`);
   if (t.notes) meta.push('<span>&#9998;</span>');
-  return `<div class="row${t.done ? ' done' : ''}" data-id="${t.id}">
-    <div class="row-bg">${t.done ? '<span class="l del">&#10005; Удалить</span><span></span>' : '<span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span>'}</div>
-    <div class="row-in${t.priority < 4 && !t.done ? ' pr' + t.priority : ''}">
-      <button class="check p${t.priority}${t.done ? ' on' : ''}" data-act="check" aria-label="Выполнить"></button>
+  const bg = o.asDone ? '' : t.done ? '<span class="l del">&#10005; Удалить</span><span></span>' : '<span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span>';
+  return `<div class="row${shownDone ? ' done' : ''}" data-id="${t.id}"${o.asDone ? ' data-rdone="1"' : ''}>
+    <div class="row-bg">${bg}</div>
+    <div class="row-in${t.priority < 4 && !shownDone ? ' pr' + t.priority : ''}">
+      <button class="check p${t.priority}${shownDone ? ' on' : ''}" data-act="check" aria-label="Выполнить"></button>
       <div class="body" data-act="open"><div class="title">${esc(t.title)}</div>${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}</div>
     </div></div>`;
 }
@@ -354,7 +367,11 @@ function viewToday() {
   if (late.length) h += `<div class="group-h red">Просрочено &middot; ${late.length}</div>` + list(late);
   h += `<div class="group-h">${dateLabel(t0)} &middot; ${WD_SHORT[new Date().getDay()]} ${new Date().getDate()} ${MONTHS[new Date().getMonth()]}</div>`;
   h += now.length ? list(now, { hideDate: true }) : empty('На сегодня ничего нет.<br>Нажми +, чтобы добавить задачу.');
-  if (doneToday.length) h += `<div class="group-h">Сделано сегодня &middot; ${doneToday.length}</div>` + list(doneToday, { hideDate: true });
+  const repDone = alive().filter(repeatDoneToday);
+  if (doneToday.length + repDone.length) {
+    h += `<div class="group-h">Сделано сегодня &middot; ${doneToday.length + repDone.length}</div>`
+      + list(repDone, { asDone: true, hideDate: true }) + list(doneToday, { hideDate: true });
+  }
   return h;
 }
 function viewUpcoming() {
@@ -577,7 +594,7 @@ $('#view').addEventListener('click', e => {
   const act = b.dataset.act;
   if (act === 'toggle-done') { ui.showDone = !ui.showDone; lsSet(LS.ui, ui); render(); return; }
   if (!t) return;
-  if (act === 'check') toggleDone(t);
+  if (act === 'check') holder.dataset.rdone ? undoRepeat(t) : toggleDone(t);
   else if (act === 'open') openEditor(t.id);
   else if (act === 'stage-next' || act === 'stage-prev') {
     const i = STAGES.indexOf(t.stage || 'idea') + (act === 'stage-next' ? 1 : -1);
@@ -616,6 +633,7 @@ $('#view').addEventListener('touchend', () => {
   const t = byId(inner.closest('.row').dataset.id);
   if (!t) return;
   // Done task: swipe right removes it; open task: right = done, left = tomorrow
+  if (inner.closest('.row').dataset.rdone) return; // completed repeat: tap the check to undo, no swipe
   if (dx > 90) t.done ? removeTask(t) : toggleDone(t);
   else if (dx < -90 && !t.done) postpone(t);
 });
