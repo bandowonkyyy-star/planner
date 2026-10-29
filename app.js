@@ -2,17 +2,18 @@
 
 // ---------- Constants ----------
 // UI language: Russian (user request, 2026-10-28)
-const PROJECTS = { inbox: 'Входящие', tasks: 'Задачи', tiktok: 'TikTok', motion: 'Моушн', study: 'Учёба' };
+// No Inbox: tasks without a tag go to "Задачи" (user request, 2026-10-29)
+const PROJECTS = { tasks: 'Задачи', tiktok: 'TikTok', motion: 'Моушн', study: 'Учёба' };
 const STAGES = ['idea', 'script', 'shoot', 'edit', 'published'];
 const STAGE_LABEL = { idea: 'Идея', script: 'Сценарий', shoot: 'Съёмка', edit: 'Монтаж', published: 'Опубликовано' };
 const REPEAT_LABEL = { daily: 'Каждый день', weekdays: 'По будням', weekly: 'Каждую неделю', monthly: 'Каждый месяц' };
-const VIEW_TITLE = { today: 'Сегодня', upcoming: 'Скоро', inbox: 'Входящие', projects: 'Проекты', tiktok: 'TikTok' };
+const VIEW_TITLE = { today: 'Сегодня', upcoming: 'Скоро', projects: 'Проекты', tiktok: 'TikTok' };
 const LS = { data: 'planner.data', cfg: 'planner.cfg', dirty: 'planner.dirty', ui: 'planner.ui' };
 const TOMBSTONE_DAYS = 30;
 
 // Quick-add keywords (input may be typed in English or Russian)
 const PROJECT_ALIAS = {
-  inbox: 'inbox', 'входящие': 'inbox',
+  inbox: 'tasks', 'входящие': 'tasks',
   tasks: 'tasks', task: 'tasks', 'задачи': 'tasks', 'дела': 'tasks',
   tiktok: 'tiktok', tt: 'tiktok', 'тикток': 'tiktok', 'тт': 'tiktok',
   motion: 'motion', mo: 'motion', 'моушн': 'motion', 'моушен': 'motion',
@@ -105,7 +106,7 @@ function repeatLabel(r) {
 
 // ---------- Quick-add parser ----------
 function parseQuick(text, defaults) {
-  const out = Object.assign({ priority: 4, due: null, time: null, project: 'inbox', repeat: null }, defaults || {});
+  const out = Object.assign({ priority: 4, due: null, time: null, project: 'tasks', repeat: null }, defaults || {});
   const timeRe = /^([01]?\d|2[0-3]):([0-5]\d)$/;
   const words = text.trim().split(/\s+/);
   const keep = [];
@@ -162,7 +163,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 function newTask(fields) {
   const now = Date.now();
   return Object.assign({
-    id: uid(), title: '', notes: '', project: 'inbox', stage: null, priority: 4,
+    id: uid(), title: '', notes: '', project: 'tasks', stage: null, priority: 4,
     due: null, time: null, repeat: null, done: false, doneAt: null, subtasks: [],
     created: now, modified: now, deleted: false
   }, fields);
@@ -205,6 +206,12 @@ function undoRepeat(t) {
   t.due = t.prevDue && t.prevDue <= today() ? t.prevDue : today();
   t.lastDoneAt = null;
   touch(t); commit();
+}
+// Legacy "inbox" tasks (old data or an old app version on another device) move to "Задачи"
+function migrateInbox() {
+  let n = 0;
+  data.tasks.forEach(t => { if (t.project === 'inbox' && !t.deleted) { t.project = 'tasks'; touch(t); n++; } });
+  if (n) commit();
 }
 function removeTask(t) {
   const before = JSON.stringify(t);
@@ -303,6 +310,7 @@ async function sync() {
       const hh = new Date();
       setStatus('ok', `${pad(hh.getHours())}:${pad(hh.getMinutes())}`);
       render();
+      migrateInbox();
       break;
     }
   } catch (e) {
@@ -344,7 +352,7 @@ function rowHtml(t, opts) {
   if (t.repeat && !o.asDone) meta.push(`<span>&#8635; ${repeatLabel(t.repeat)}</span>`);
   if (t.subtasks.length) meta.push(`<span>${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}</span>`);
   if (t.project === 'tiktok' && t.stage) meta.push(`<span>${STAGE_LABEL[t.stage]}</span>`);
-  if (!o.hideProject && t.project !== 'inbox') meta.push(`<span class="chip">${PROJECTS[t.project]}</span>`);
+  if (!o.hideProject && PROJECTS[t.project] && t.project !== 'tasks') meta.push(`<span class="chip">${PROJECTS[t.project]}</span>`);
   if (t.notes) meta.push('<span>&#9998;</span>');
   const bg = o.asDone ? '' : t.done ? '<span class="l del">&#10005; Удалить</span><span></span>' : '<span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span>';
   return `<div class="row${shownDone ? ' done' : ''}" data-id="${t.id}"${o.asDone ? ' data-rdone="1"' : ''}>
@@ -387,11 +395,6 @@ function viewUpcoming() {
   if (later.length) h += '<div class="group-h">Позже</div>' + list(later);
   return h || empty('На ближайшие две недели задач нет.');
 }
-function viewInbox() {
-  const items = alive().filter(t => t.project === 'inbox' && !t.done).sort(byPrio);
-  return items.length ? '<div class="hint" style="margin:6px 4px">Нажми на задачу, чтобы выбрать проект, дату и приоритет.</div>' + list(items, { hideProject: true })
-    : empty('Во входящих пусто.<br>Всё разобрано.');
-}
 function viewProjects() {
   const keys = ['tasks', 'motion', 'study'];
   let h = `<div class="seg">${keys.map(k => `<button data-proj="${k}" class="${ui.project === k ? 'on' : ''}">${PROJECTS[k]}</button>`).join('')}</div>`;
@@ -425,12 +428,11 @@ function viewTiktok() {
 }
 
 function render() {
-  const fn = { today: viewToday, upcoming: viewUpcoming, inbox: viewInbox, projects: viewProjects, tiktok: viewTiktok }[ui.view] || viewToday;
+  if (!VIEW_TITLE[ui.view]) ui.view = 'today';
+  const fn = { today: viewToday, upcoming: viewUpcoming, projects: viewProjects, tiktok: viewTiktok }[ui.view];
   $('#viewTitle').textContent = VIEW_TITLE[ui.view];
   $('#view').innerHTML = fn();
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === ui.view));
-  const inboxCount = alive().filter(t => t.project === 'inbox' && !t.done).length;
-  document.querySelector('.tabs [data-view="inbox"]').lastChild.textContent = inboxCount ? `Входящие ${inboxCount}` : 'Входящие';
 }
 
 // ---------- Sheets ----------
@@ -658,5 +660,6 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });
 }
 
+migrateInbox();
 render();
 sync();
