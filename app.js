@@ -197,6 +197,11 @@ function toggleDone(t) {
   touch(t); commit();
   if (t.done) toast('Выполнено', before);
 }
+function removeTask(t) {
+  const before = JSON.stringify(t);
+  t.deleted = true; touch(t); commit();
+  toast('Удалено', before);
+}
 function postpone(t) {
   const before = JSON.stringify(t);
   t.due = addDays(today(), 1); touch(t); commit();
@@ -330,7 +335,7 @@ function rowHtml(t, opts) {
   if (!o.hideProject && t.project !== 'inbox') meta.push(`<span class="chip">${PROJECTS[t.project]}</span>`);
   if (t.notes) meta.push('<span>&#9998;</span>');
   return `<div class="row${t.done ? ' done' : ''}" data-id="${t.id}">
-    <div class="row-bg"><span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span></div>
+    <div class="row-bg">${t.done ? '<span class="l del">&#10005; Удалить</span><span></span>' : '<span class="l">&#10003; Готово</span><span class="r">На завтра &#8594;</span>'}</div>
     <div class="row-in${t.priority < 4 && !t.done ? ' pr' + t.priority : ''}">
       <button class="check p${t.priority}${t.done ? ' on' : ''}" data-act="check" aria-label="Выполнить"></button>
       <div class="body" data-act="open"><div class="title">${esc(t.title)}</div>${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}</div>
@@ -610,8 +615,9 @@ $('#view').addEventListener('touchend', () => {
   if (lock !== 'x') return;
   const t = byId(inner.closest('.row').dataset.id);
   if (!t) return;
-  if (dx > 90) toggleDone(t);
-  else if (dx < -90) postpone(t);
+  // Done task: swipe right removes it; open task: right = done, left = tomorrow
+  if (dx > 90) t.done ? removeTask(t) : toggleDone(t);
+  else if (dx < -90 && !t.done) postpone(t);
 });
 
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
