@@ -1,5 +1,5 @@
 ﻿// Network-first app shell: always fresh when online, cached copy when offline. Bump VERSION on each deploy.
-const VERSION = 'planner-v11';
+const VERSION = 'planner-v12';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
