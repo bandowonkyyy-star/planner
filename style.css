@@ -78,6 +78,7 @@ main { padding: 4px 16px calc(var(--safe-b) + 150px); }
 }
 .row-bg .l { color: var(--ok); }
 .row-bg .r { color: var(--sky); }
+.row-bg .l.del { color: var(--warn); }
 .row-in {
   position: relative; display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 14px; min-height: 56px; background: var(--card);
